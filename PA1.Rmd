@@ -38,9 +38,12 @@ library(dplyr)
 ```
 ## 2.1 Calculate the total number of steps taken per day
 ```{r}
-stepsperday <- df %>% na.omit() %>% group_by(date) %>% summarise(totalSteps=sum(steps))
+stepsperday <-  df %>% 
+                na.omit() %>% 
+                group_by(date) %>% 
+                summarise(totalSteps=sum(steps))
 ```
-List of steps per day is calculated, see head:
+A list of steps per day has been calculated, see head():
 ```{r}
 head(stepsperday)
 ```
@@ -60,7 +63,7 @@ qplot(totalSteps,
 ```
 
 ## 2.3 Calculate and report the mean and median of the total number of steps taken per day
-With stepsperday calculated in 2.1 mean and median can be calculated.
+With stepsperday from 2.1 mean and median can be calculated.
 ```{r}
 mean(stepsperday$totalSteps, na.rm=TRUE)
 ```
@@ -70,22 +73,163 @@ median(stepsperday$totalSteps, na.rm=TRUE)
 # 3 What is the average daily activity pattern?
 ##  3.1 Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
 
-## 3.2 Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+```{r}
+stepsoverday <- df %>% 
+                na.omit() %>% 
+                group_by(interval) %>% 
+                summarise(averagesteps=mean(steps))
+```
+List of steps over day is calculated, see head():
+```{r}
+head(stepsoverday)
+```
 
+```{r, ECHO=FALSE}
+library(ggplot2)
+```
+```{r}
+qplot(x=interval,
+      y=averagesteps,
+      data=stepsoverday,
+      geom="line",
+      main="steps over day",
+      ylab="steps",
+      xlab="hour"
+     )
+```
+
+
+## 3.2 Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+With stepsoverday calculated in 3.1 its maximun can be calculated.
+```{r}
+which.max(stepsoverday$averagesteps)
+```
+
+ok, 104th intervall is highest. [Raw estimation: With 12 intervals per hour this will be between 8:00am and 9:00am.]. To be precise:
+```{r}
+stepsoverday[which.max(stepsoverday$averagesteps), ]
+```
+Interval ID 835 can be interpreted as time range 8:35am-8:40am with 206 steps per day in average. (Seems as going to work or school happens mostly at the same time while returns are distributed during whole day time until 7:00pm.)
 
 # 4 Inputing missing values
 ## 4.1 Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+As shown in 2.1 there are 2304 incomplete cases. It has to be checked if NA are in column Steps only or in Date and Interval, too.
+```{r}
+sum(!complete.cases(df$steps))
+sum(!complete.cases(df$date))
+sum(!complete.cases(df$interval))
+```
 
-## 4.2 Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+Ok, missing values are in steps only.
+
+## 4.2 Devise a strategy for filling in all of the missing values in the dataset. 
+As calculated in 3, the mean for that 5-minute interval could be used to replace missing values.
 
 ## 4.3 Create a new dataset that is equal to the original dataset but with the missing data filled in
+4.3.1 Set up a data frame that contains mean replacements for NA values. As used in 2 the dplyr functionality is convenient here, too.
+```{r}
+deltadf <-  df[which(is.na(df$steps)), ] %>% 
+            inner_join(stepsoverday, by="interval") %>%
+            mutate(steps=averagesteps) %>%
+            select(-averagesteps)
+dim(deltadf)
+```
 
-## 4.4 Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+4.3.2 Merge df (original data frame with NAs) together with deltadf (delta data frame with replacements) to a new updated data frame.
+For that origin data isn't overwritten copy it to new data frame.
+```{r}
+updateddf <- df
+updateddf[which(is.na(updateddf$steps)), 1] <- deltadf[ , 1]
+str(updateddf)
+sum(!complete.cases(updateddf$steps))
+```
+
+## 4.4 Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. 
+First summarise steps per interval on updated data similar to 2.1 (but without na.omit()).
+```{r}
+updatedstepsperday <- updateddf %>% 
+                      group_by(date) %>% 
+                      summarise(totalSteps=sum(steps))
+```
+
+Now the histogram
+
+```{r, echo=FALSE}
+qplot(totalSteps,
+      data=updatedstepsperday,
+      geom="histogram",
+      binwidth=2500,
+      main="(updated) Histogram on steps per day",
+      ylab="(updated) number of days",
+      xlab="steps per day"
+     ) 
+```
+```{r, echo=FALSE}
+qplot(totalSteps,
+      data=stepsperday,
+      geom="histogram",
+      binwidth=2500,
+      main="Histogram on steps per day (2.1 repeated for comparison)",
+      ylab="number of days",
+      xlab="steps per day"
+     )
+```
+
+Histograms 2.1 and 4.4 differ visually, updated data is more centered to mean and has higher peak. To calculate the difference similar to 2.3.
+```{r}
+abs(median(stepsperday$totalSteps, na.rm=TRUE) - mean(stepsperday$totalSteps, na.rm=TRUE))
+abs(median(updatedstepsperday$totalSteps) - mean(updatedstepsperday$totalSteps))
+```
+This shows that adding mssing values with mean equivalences shifts median to mean in updated data.
+
 
 # 5 Are there differences in activity patterns between weekdays and weekends?
 
 For this part the weekdays() function may be of some help here. Use the dataset with the filled-in missing values for this part.
 
 ## 5.1 Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+For not changing origin data following analysis is done on updated data frame.
+It is to change the date string into a date type, to evaluate each weekdayand to add new column to data.
 
-## 5.2 Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+1. Remark: Column date is of string in format YYYY-mm-dd and can be switched into date type by: as.Date(datafile[,"Date"], "%Y-%m-%d").]
+2. Remark: Well, yes, I'm currently located in Germany. After a short irritation of expected code not working I remembered Ubuntu's System Settings | Language Support | Regional Formats being set to 'Deutsch (Deutschland)'.
+```{r}
+updateddf <- updateddf %>% 
+               mutate(weekdays=ifelse(weekdays(as.Date(date, "%Y-%m-%d")) == "Samstag" | 
+                                      weekdays(as.Date(date, "%Y-%m-%d")) == "Sonntag", 
+                                      "weekend", 
+                                      "weekday"))
+updateddf$weekdays <- as.factor(updateddf$weekdays)
+```
+
+no, that's bad, I don't want code to be dependent on localisation... let's go for international as.POSIXlt(df\$date)\$wday returning numeric weekday (0-6 starting on Sunday).
+```{r}
+updateddf <- updateddf %>% 
+               mutate(wday=ifelse((as.POSIXlt(date, "%Y-%m-%d")$wday) == 0 |
+                                  (as.POSIXlt(date, "%Y-%m-%d")$wday) == 6  , 
+                                  "weekend", 
+                                  "weekday"))
+updateddf$wday <- as.factor(updateddf$wday)
+str(updateddf) 
+```
+
+## 5.2 Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+
+```{r}
+updatedstepsoverday <- updateddf %>% 
+                      group_by(interval, wday) %>% 
+                      summarise(averagesteps=mean(steps))
+```
+
+```{r}
+qplot(x=interval,
+      y=averagesteps,
+      data=updatedstepsoverday,
+      geom="line",
+      main="steps over day",
+      xlab="hour",
+      ylab="steps",
+      facets=wday ~ .)
+```
+
+tchakka!
